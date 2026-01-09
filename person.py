@@ -1,107 +1,110 @@
 import cv2
-import torch
 import time
-import os
+import torch
 import requests
+from datetime import datetime
 
-# ================= Telegram =================
-BOT_TOKEN = "YOUR_BOT_TOKEN"
-CHAT_ID = "YOUR_CHAT_ID"
+# ================== TELEGRAM CONFIG ==================
+TELEGRAM_TOKEN = "8301170878:AAH9OiT7kEiKIrBdvc2qh1QogAXPbI-0Z8c"
+CHAT_ID = " 8180688206"
 
-def send_telegram(image_path, message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+def send_telegram(image_path):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
     with open(image_path, "rb") as img:
-        requests.post(
-            url,
-            data={"chat_id": CHAT_ID, "caption": message},
-            files={"photo": img}
-        )
+        requests.post(url, data={"chat_id": CHAT_ID}, files={"photo": img})
 
-# ================= YOLOv5 =================
-yolo = torch.hub.load("ultralytics/yolov5", "yolov5s", pretrained=True)
-yolo.conf = 0.5
+# ================== LOAD YOLOv5 (CPU) ==================
+model = torch.hub.load(
+    'ultralytics/yolov5',
+    'yolov5n',      # เบา เหมาะกับ CPU
+    device='cpu'
+)
+model.conf = 0.6   # ความมั่นใจขั้นต่ำ
+model.classes = [0]
 
-# ================= HOG =================
-hog = cv2.HOGDescriptor()
-hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+# ================== CAMERA ==================
+cap = cv2.VideoCapture(r"C:\Users\IT-Chuethong\Downloads\person_detection_Edit.mp4")
+time.sleep(2)
 
-# ================= Camera =================
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("เปิดกล้องไม่ได้")
-    exit()
 
-# ================= Variables =================
-person_timer = {}
-SAVE_DIR = "intruder_images"
-os.makedirs(SAVE_DIR, exist_ok=True)
+FRAME_SIZE = (640,480)
+ret, frame = cap.read()
+frame = cv2.resize(frame, FRAME_SIZE)
+prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
 
-print("Hybrid Intrusion Detection Started (HOG + YOLOv5)")
+last_alert_time = 0
+
+person_stable_frames = 0
+PERSON_CONFIRM_FRAMES = 10
+
+print("🔍 System started...")
 
 while True:
     ret, frame = cap.read()
     if not ret:
         break
 
-    frame_resized = cv2.resize(frame, (640, 480))
+    frame = cv2.resize(frame, FRAME_SIZE)
 
-    # ---------- STEP 1: HOG (เร็ว) ----------
-    boxes, weights = hog.detectMultiScale(
-        frame_resized,
-        winStride=(8, 8),
-        padding=(8, 8),
-        scale=1.05
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (21, 21), 0)
+
+    if prev_gray.shape != gray.shape:
+        prev_gray = gray
+        continue
+
+    # ================== MOTION DETECTION ==================
+    diff = cv2.absdiff(prev_gray, gray)
+    thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]
+    thresh = cv2.dilate(thresh, None, iterations=2)
+
+    contours, _ = cv2.findContours(
+        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
 
-    if len(boxes) > 0:
-        # ---------- STEP 2: YOLOv5 (ยืนยัน) ----------
-        results = yolo(frame_resized)
-        detections = results.xyxy[0]
+    motion_detected = False
+    for c in contours:
+        if cv2.contourArea(c) < 2000:
+            continue
+        motion_detected = True
+        (x, y, w, h) = cv2.boundingRect(c)
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 255), 2)
 
-        current_time = time.time()
+    confirmed_intruder = False
 
-        for *box, conf, cls in detections:
-            if int(cls) == 0:  # person
+    # ================== YOLO CONFIRM ==================
+    if motion_detected:
+        results = model(frame)
+
+        for *box, conf, cls in results.xyxy[0]:
+            label = model.names[int(cls)]
+            if label == "person":
+                confirmed_intruder = True
                 x1, y1, x2, y2 = map(int, box)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
 
-                person_id = f"{x1}_{y1}"
+    # ================== ALERT ==================
+    if confirmed_intruder:
+        cv2.putText(frame, "INTRUDER CONFIRMED!", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-                if person_id not in person_timer:
-                    person_timer[person_id] = current_time
-
-                duration = current_time - person_timer[person_id]
-
-                # ---------- วิเคราะห์พฤติกรรม ----------
-                if duration > 10:  # อยู่เกิน 10 วินาที
-                    img_path = f"{SAVE_DIR}/intruder_{int(time.time())}.jpg"
-                    cv2.imwrite(img_path, frame_resized)
-
-                    send_telegram(
-                        img_path,
-                        f"⚠️ Intruder Detected\nDuration: {int(duration)} seconds"
-                    )
-
-                    person_timer.pop(person_id)
-                    break
-
-                # ---------- วาดผล ----------
-                cv2.rectangle(frame_resized, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                cv2.putText(
-                    frame_resized,
-                    f"Suspicious: {int(duration)}s",
-                    (x1, y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 0, 255),
-                    2
-                )
-
+        # ป้องกันแจ้งเตือนถี่เกิน
+        if time.time() - last_alert_time > 15:
+            filename = f"intruder_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            cv2.imwrite(filename, frame)
+            send_telegram(filename)
+            last_alert_time = time.time()
     else:
-        person_timer.clear()
+        cv2.putText(frame, "Monitoring...", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-    cv2.imshow("Hybrid Intrusion Detection", frame_resized)
+    cv2.imshow("Intruder Detection System", frame)
+
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
+
+    prev_gray = gray
 
 cap.release()
 cv2.destroyAllWindows()
