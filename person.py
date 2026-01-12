@@ -1,110 +1,76 @@
 import cv2
-import time
 import torch
+import time
 import requests
-from datetime import datetime
 
-# ================== TELEGRAM CONFIG ==================
-TELEGRAM_TOKEN = "8301170878:AAH9OiT7kEiKIrBdvc2qh1QogAXPbI-0Z8c"
-CHAT_ID = " 8180688206"
+# ================== Telegram ==================
+TOKEN = "YOUR_BOT_TOKEN"
+CHAT_ID = "YOUR_CHAT_ID"
 
-def send_telegram(image_path):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-    with open(image_path, "rb") as img:
-        requests.post(url, data={"chat_id": CHAT_ID}, files={"photo": img})
+def send_telegram(image):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    _, img = cv2.imencode(".jpg", image)
+    files = {"photo": img.tobytes()}
+    data = {"chat_id": CHAT_ID}
+    requests.post(url, files=files, data=data)
 
-# ================== LOAD YOLOv5 (CPU) ==================
+# ================== Load YOLOv5 ==================
 model = torch.hub.load(
     'ultralytics/yolov5',
-    'yolov5n',      # เบา เหมาะกับ CPU
-    device='cpu'
+    'yolov5n',
+    pretrained=True
 )
-model.conf = 0.6   # ความมั่นใจขั้นต่ำ
-model.classes = [0]
 
-# ================== CAMERA ==================
-cap = cv2.VideoCapture(r"C:\Users\IT-Chuethong\Downloads\person_detection_Edit.mp4")
-time.sleep(2)
+model.conf = 0.4        # confidence threshold
+model.classes = [0]     # detect only person
 
+# ================== Video Source ==================
+# cap = cv2.VideoCapture(0)          # กล้อง
+cap = cv2.VideoCapture("video.mp4")  # วิดีโอ
 
-FRAME_SIZE = (640,480)
-ret, frame = cap.read()
-frame = cv2.resize(frame, FRAME_SIZE)
-prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
-
-last_alert_time = 0
-
-person_stable_frames = 0
-PERSON_CONFIRM_FRAMES = 10
+last_alert = 0
+ALERT_INTERVAL = 30  # วินาที
 
 print("🔍 System started...")
 
-while True:
+while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
 
-    frame = cv2.resize(frame, FRAME_SIZE)
+    results = model(frame)
+    detections = results.xyxy[0]
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (21, 21), 0)
+    person_detected = False
 
-    if prev_gray.shape != gray.shape:
-        prev_gray = gray
-        continue
+    for *box, conf, cls in detections:
+        if int(cls) == 0:
+            person_detected = True
 
-    # ================== MOTION DETECTION ==================
-    diff = cv2.absdiff(prev_gray, gray)
-    thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)[1]
-    thresh = cv2.dilate(thresh, None, iterations=2)
+            x1, y1, x2, y2 = map(int, box)
 
-    contours, _ = cv2.findContours(
-        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
+            # วาดกรอบ
+            cv2.rectangle(frame, (x1, y1), (x2, y2),
+                          (0, 255, 0), 2)
 
-    motion_detected = False
-    for c in contours:
-        if cv2.contourArea(c) < 2000:
-            continue
-        motion_detected = True
-        (x, y, w, h) = cv2.boundingRect(c)
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 255), 2)
+            # แสดงข้อความ
+            cv2.putText(frame, "person",
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8, (0, 255, 0), 2)
 
-    confirmed_intruder = False
+    # ================== Telegram Alert ==================
+    if person_detected:
+        now = time.time()
+        if now - last_alert > ALERT_INTERVAL:
+            send_telegram(frame)
+            last_alert = now
+            print("📨 Telegram alert sent")
 
-    # ================== YOLO CONFIRM ==================
-    if motion_detected:
-        results = model(frame)
+    cv2.imshow("YOLOv5 Person Detection", frame)
 
-        for *box, conf, cls in results.xyxy[0]:
-            label = model.names[int(cls)]
-            if label == "person":
-                confirmed_intruder = True
-                x1, y1, x2, y2 = map(int, box)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-
-    # ================== ALERT ==================
-    if confirmed_intruder:
-        cv2.putText(frame, "INTRUDER CONFIRMED!", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-        # ป้องกันแจ้งเตือนถี่เกิน
-        if time.time() - last_alert_time > 15:
-            filename = f"intruder_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-            cv2.imwrite(filename, frame)
-            send_telegram(filename)
-            last_alert_time = time.time()
-    else:
-        cv2.putText(frame, "Monitoring...", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    cv2.imshow("Intruder Detection System", frame)
-
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+    if cv2.waitKey(1) & 0xFF == 27:
         break
-
-    prev_gray = gray
 
 cap.release()
 cv2.destroyAllWindows()
