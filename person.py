@@ -1,14 +1,28 @@
+# ระบบตรวจจับบุคคลด้วย YOLOv5 และส่งแจ้งเตือนผ่าน Telegram
+
+# TOKEN 8264928996:AAGfNOVkkKTGmPw7R_QHKmWe-vbCyffe9qE
+# CHAT ID 8180688206
+
+from datetime import datetime
 import cv2
 import torch
 import time
 import requests
 
 # ================== Telegram ==================
-TOKEN = "YOUR_BOT_TOKEN"
-CHAT_ID = "YOUR_CHAT_ID"
+TOKEN = "8264928996:AAGfNOVkkKTGmPw7R_QHKmWe-vbCyffe9qE"
+CHAT_ID = "8180688206"
 
 def send_telegram(image):
     url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    
+    now = datetime.now()
+    time_srt = now.strftime("%Y-%m-%d %H:%M:%S")
+      
+    caption = (
+        "ตรวจพบบุคคล\n\n"
+        f" วันที่และเวลา:\n{time_srt}"
+    )
     _, img = cv2.imencode(".jpg", image)
     files = {"photo": img.tobytes()}
     data = {"chat_id": CHAT_ID}
@@ -26,7 +40,7 @@ model.classes = [0]     # detect only person
 
 # ================== Video Source ==================
 # cap = cv2.VideoCapture(0)          # กล้อง
-cap = cv2.VideoCapture("video.mp4")  # วิดีโอ
+cap = cv2.VideoCapture(0)  # วิดีโอ
 
 last_alert = 0
 ALERT_INTERVAL = 30  # วินาที
@@ -69,7 +83,7 @@ while cap.isOpened():
 
     cv2.imshow("YOLOv5 Person Detection", frame)
 
-    if cv2.waitKey(1) & 0xFF == 27:
+    if cv2.waitKey(1) & 0xFF == ord('c'):
         break
 
 cap.release()
