@@ -1,46 +1,27 @@
-ไลบรารี่ที่ใช้
+ไลบรารี่ที่ลงทั้งหมด 
 
-Python
-Python 3.11
+ ให้ Activate virtual environment ก่อนทุกครั้ง
+  .venv\Scripts\activate
 
-ประมวลผลภาพและวิดีโอ
- OpenCV
- pip install opencv-python
-pip install opencv-python-headless
+1 อัปเกรด pip : python -m pip install --upgrade pip
+2 ติดตั้ง PyTorch (CPU) : pip install torch torchvision torchaudio
+3 ติดตั้ง OpenCV (ใช้งานกล้อง) : pip install opencv-python
+4 ติดตั้ง NumPy : pip install numpy
+5ติดตั้ง Pandas :pip install pandas
+6ติดตั้ง tqdm : pip install tqdm
+7. ติดตั้ง Requests : pip install requests
+8. ติดตั้ง Pillow : pip install pillow
+9. ติดตั้ง PyYAML : pip install pyyaml
+ * สรุปคำสั่งแบบรวม (ลงทีเดียว) *
+pip install torch torchvision torchaudio opencv-python numpy pandas tqdm requests pillow pyyaml
 
-NumPy
-pip install numpy
-
-Deep Learning / YOLO PyTorch (CPU)
-pip install torch torchvision torchaudio
-
-YOLOv5
-
-การสื่อสารและแจ้งเตือน
- Requests
- pip install requests
-
-import time
-import datetime
-import os
-import sys
-
-ติดตั้งตามลำดับนี้
-pip install numpy
-pip install opencv-python
-pip install torch torchvision torchaudio
-pip install requests
-
-git clone https://github.com/WongKinYiu/yolov7.git
-cd yolov7
-pip install -r requirements.txt
-
-ลำดับ	ไลบรารี่	ใช้ทำอะไร
-1	Python	ภาษาหลัก
-2	NumPy	จัดการข้อมูลภาพ
-3	OpenCV	ประมวลผลภาพและวิดีโอ
-4	PyTorch	รันโมเดล Deep Learning
-5	YOLOv5 / YOLOv7	ตรวจจับบุคคล
-6	Requests	แจ้งเตือนผ่าน Telegram
-7	time, datetime	ควบคุมเวลา
-8	os, sys	จัดการระบบ
+ตรวจสอบว่าไลบรารีครบหรือไม่:  pip list
+torch
+torchvision
+opencv-python
+numpy
+pandas
+tqdm
+requests
+pillow
+pyyaml
